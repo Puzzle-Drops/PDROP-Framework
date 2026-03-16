@@ -135,7 +135,7 @@ No hardcoded URLs. Works locally (`ws://localhost:3000`) and on Railway (`wss://
 
 ### 3.2 Client Side
 
-**`public/index.html`** — HTML shell + all CSS (framework styles + any game-specific styles). Contains the `#game-container`, `<canvas>`, `#ui` div, and `<script>` tags loading `framework.js` then `game.js`.
+**`public/index.html`** — Shared file. Contains the framework structure (`#game-container`, `<canvas>`, `#ui` div, framework CSS) plus game-specific CSS and any game DOM elements like HUD. Framework and game sections are separated by comments.
 
 **`public/framework.js`** — Framework client code (same for every game):
 - 1920×1080 scaling system (CSS zoom)
@@ -446,7 +446,6 @@ const GameDef = {
     id: 'pdrop-arrow',
     name: 'PDROP Arrow',
     maxPlayers: 12,
-    slotsPerTeam: 3,
     supportedModes: ['teams', 'ffa'],
     defaultMode: 'ffa',
     defaultTeamCount: 2,
@@ -462,6 +461,8 @@ const GameDef = {
 
 ### 10.2 Lobby Scenarios
 
+The framework computes slots per team from `maxPlayers / teamCount`.
+
 **FFA (default):** Single pool of up to 12 slots. Each player gets a unique color.
 
 ```
@@ -472,7 +473,7 @@ const GameDef = {
 └──────────────────────────────────────┘
 ```
 
-**2 Teams:** 3 slots per team = 6 max players. Host can close slots for smaller games.
+**2 Teams:** 12 / 2 = 6 slots per team. Host can close slots for smaller games.
 
 ```
 ┌─ Red Team ──────────┐  ┌─ Blue Team ─────────┐
@@ -482,9 +483,9 @@ const GameDef = {
 └──────────────────────┘  └──────────────────────┘
 ```
 
-**3 Teams:** 3 slots per team = 9 max players.
+**3 Teams:** 12 / 3 = 4 slots per team.
 
-**4 Teams:** 3 slots per team = 12 max players (uses all color slots).
+**4 Teams:** 12 / 4 = 3 slots per team.
 
 ### 10.3 Scoreboard Columns
 
@@ -743,7 +744,7 @@ This section is for the AI building the project.
 
 Six code files total: `server.js` (entry point), `server/framework.js`, `game/arrow.js`, `public/index.html`, `public/framework.js`, `public/game.js`. Plus `package.json`.
 
-Framework files (`server/framework.js`, `public/framework.js`, and most of `index.html`) are identical across all PDROP games. Game files (`game/arrow.js`, `public/game.js`) are the only things that change.
+Framework files (`server/framework.js`, `public/framework.js`) are identical across all PDROP games. `index.html` is shared — it contains framework structure and game-specific CSS/markup separated by comments. Game files (`game/arrow.js`, `public/game.js`) are the only things fully replaced.
 
 ### Server Architecture
 
