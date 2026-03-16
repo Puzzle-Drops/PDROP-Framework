@@ -60,15 +60,24 @@ The canvas handles the game world. The DOM overlay handles all interactive UI. B
 
 ### Framework vs Game Code
 
-The codebase is split into **framework files** (shared across all games) and **game files** (specific to each game):
+The codebase is split into **framework files** and **game files**:
 
 | Side | Framework File | Game File |
 |------|---------------|-----------|
 | Server | `server/framework.js` — lobby, slots, chat, pings, tick loop | `game/*.js` — game logic, collision, win conditions |
 | Client | `public/framework.js` — scaling, camera, chat UI, pings, scoreboard, tooltips, lobby UI | `public/game.js` — `GameDef` hooks, rendering, input, HUD |
-| HTML | `public/index.html` — shell, CSS, `<script>` tags | *(game can add CSS to index.html if needed)* |
+| HTML/CSS | `public/index.html` — shell, framework CSS, `<script>` tags | `public/index.html` — also holds game-specific CSS and any game DOM |
 
-The entry point `server.js` wires them together. To build a new game, replace the game files and keep everything else. See Appendix B for the full project structure.
+`index.html` is shared territory. It contains the framework structure (container, canvas, `#ui` overlay, framework CSS) and also game-specific CSS and any extra game markup. When starting a new game, you keep the framework parts and replace the game parts. The framework sections are clearly commented.
+
+**To start a new game from this repo:**
+
+1. In `index.html` — remove game-specific CSS and DOM (marked with comments), keep framework structure
+2. Delete `game/arrow.js` — write a new server game module with the same hook interface
+3. Delete `public/game.js` — write a new `window.GameDef` with only the hooks you need
+4. Change the require path in `server.js`
+
+Three framework files are never touched: `server/framework.js`, `public/framework.js`, and `package.json`.
 
 ---
 
@@ -1369,37 +1378,53 @@ function gameLoop(timestamp) {
 
 ### 12.2 Game-Defined Hooks
 
-Each game implements:
+Each game defines a `GameDef` object. Only `id`, `name`, and `maxPlayers` are required. Everything else has sensible defaults — if you don't define a hook, the framework skips it or uses the default behavior.
 
 ```js
 const GameDef = {
-    id: 'capture-flag',
-    name: 'Capture the Flag',
+    // ── Required ──────────────────────────────────────────────
+    id: 'my-game',
+    name: 'My Game',
     maxPlayers: 8,
-    slotsPerTeam: 4,                    // determines slot count
-    supportedModes: ['teams', 'ffa'],
-    defaultMode: 'teams',
-    defaultTeamCount: 2,
-    worldWidth: 4000,                   // camera bounds
-    worldHeight: 3000,
 
-    settings: {                         // lobby-configurable
-        roundTime: { type: 'number', default: 300, min: 60, max: 600, label: 'Round Time (s)' },
-        scoreLimit: { type: 'number', default: 3, min: 1, max: 10, label: 'Score Limit' },
-    },
+    // ── Optional properties (defaults shown) ──────────────────
+    supportedModes: ['ffa'],            // 'teams', 'ffa', or both
+    defaultMode: 'ffa',
+    defaultTeamCount: 2,                // only used if mode is 'teams'
+    worldWidth: 1920,                   // default = viewport size (no camera needed)
+    worldHeight: 1080,
 
-    getCameraLockTarget(localPlayer) {},    // return entity for Y-lock, or null to disable
-    getCameraSnapTarget(localPlayer) {},    // return point of interest for Space-jump
-    getScoreboardColumns() {},              // return array of { key, label, width }
-    getPlayerStats(playerId) {},            // return stat object for scoreboard row
-    init(players, settings) {},              // set up world state
-    update(dt) {},                           // per-frame logic
-    render(ctx, camera) {},                  // draw world
-    onPlayerInput(input) {},                 // handle local input
-    getEntityTooltip(entity) {},             // return HTML string or null
-    getResults() {},                         // return post-game data
+    settings: {},                       // lobby-configurable settings (empty = none)
+
+    // ── Optional hooks (all default to no-op / null) ──────────
+    //    Framework checks if these exist before calling them.
+    //    Only implement what your game needs.
+
+    getCameraLockTarget(localPlayer) {},    // Y-lock target. Omit = Y does nothing.
+    getCameraSnapTarget(localPlayer) {},    // Space-jump target. Omit = Space does nothing.
+    getScoreboardColumns() {},              // Extra stat columns. Omit = just player names.
+    getPlayerStats(playerId) {},            // Stats per player. Omit = no stats.
+    getEntityTooltip(entity) {},            // Canvas entity tooltips. Omit = no entity tooltips.
+    init(players, settings) {},             // Set up world state on game start.
+    render(ctx, camera) {},                 // Draw the game world.
+    onInput(inputType, data) {},            // Handle game-specific input.
+    getResults() {},                        // Post-game results. Omit = generic "Game Over".
 };
 ```
+
+**Framework hook-calling pattern:**
+
+```js
+// Framework always guards optional hooks
+if (GameDef.getCameraLockTarget) {
+    const target = GameDef.getCameraLockTarget(localPlayer);
+    // ...
+}
+```
+
+**Slot calculation:** The framework computes slots from `maxPlayers` and the lobby's current `teamCount`. In team mode, slots per team = `Math.floor(maxPlayers / teamCount)`. In FFA, all slots are in one pool. No need to specify `slotsPerTeam`.
+
+**Camera auto-detection:** If `worldWidth` and `worldHeight` are both 1920×1080 (the default), the framework disables edge scrolling and camera movement entirely — the world fits on screen. Games with larger worlds just set bigger values.
 
 ---
 
@@ -1434,25 +1459,31 @@ const GameDef = {
 
 ```
 my-pdrop-game/
-├── CLAUDE.md                        ← Project context for Claude Code
-├── package.json                     ← express + ws
-├── server.js                        ← Entry point: wires framework to game
+├── CLAUDE.md
+├── package.json                     ← FRAMEWORK — express + ws
+├── server.js                        ← Entry point (change game require path)
+│
 ├── server/
-│   └── framework.js                 ← FRAMEWORK (never changes between games)
+│   └── framework.js                 ← FRAMEWORK — never changes
+│
 ├── game/
-│   └── mygame.js                    ← GAME: server-side logic (replace per game)
+│   └── mygame.js                    ← GAME — delete and replace
+│
 ├── public/
-│   ├── index.html                   ← HTML shell + all CSS
-│   ├── framework.js                 ← FRAMEWORK (never changes between games)
-│   └── game.js                      ← GAME: client-side GameDef (replace per game)
+│   ├── index.html                   ← SHARED — framework structure + game CSS/markup
+│   ├── framework.js                 ← FRAMEWORK — never changes
+│   └── game.js                      ← GAME — delete and replace
+│
 └── docs/
     ├── pdrop-framework.md
     └── mygame-design.md
 ```
 
-**Framework files** (`server/framework.js`, `public/framework.js`, most of `index.html`) are the same across all games. **Game files** (`game/mygame.js`, `public/game.js`) implement the hooks defined in §12.2 and are the only files that change between games.
+**To swap games:** Replace `game/mygame.js`, `public/game.js`, and the game-specific sections of `index.html`. Change the require path in `server.js`. Framework files (`server/framework.js`, `public/framework.js`, `package.json`) are never touched.
 
 ## Appendix C: Base HTML Boilerplate
+
+`index.html` contains the framework structure and game-specific content together, separated by comments.
 
 ```html
 <!DOCTYPE html>
@@ -1470,10 +1501,11 @@ my-pdrop-game/
         html, body { width: 100%; height: 100%; overflow: hidden; background: #000;
                      font-family: 'Rajdhani', sans-serif; }
 
-        /* --- Framework CSS (scaling, chat, tooltip, scoreboard, lobby, etc.) --- */
+        /* ── Framework CSS (do not modify) ── */
+        /* scaling, chat, tooltip, scoreboard, lobby, etc. */
         /* ... */
 
-        /* --- Game-specific CSS (if any) --- */
+        /* ── Game CSS (replace for new games) ── */
         /* ... */
     </style>
 </head>
@@ -1481,18 +1513,35 @@ my-pdrop-game/
     <div id="game-container">
         <canvas id="game-canvas" width="1920" height="1080"></canvas>
         <div id="ui">
+            <!-- ── Framework DOM (do not modify) ── -->
             <div class="chatbox"><!-- ... --></div>
             <div id="tooltip" class="tooltip hidden"></div>
-            <!-- Lobby screens, scoreboard, HUD, etc. -->
+            <!-- lobby screens, scoreboard backdrop, etc. -->
+
+            <!-- ── Game DOM (replace for new games) ── -->
+            <!-- game-specific HUD elements, etc. -->
         </div>
     </div>
 
-    <!-- Framework first, game second -->
     <script src="framework.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
 ```
+
+**A minimal `game.js`** (for starting a new game from scratch):
+
+```js
+// Only id, name, and maxPlayers are required.
+// All hooks are optional — only implement what you need.
+window.GameDef = {
+    id: 'my-game',
+    name: 'My Game',
+    maxPlayers: 8,
+};
+```
+
+That's a valid game definition. The framework will run with sensible defaults: FFA mode, no camera movement (world = viewport), empty scoreboard stats, no entity tooltips, generic post-game screen.
 
 ## Appendix D: Controls Reference
 
