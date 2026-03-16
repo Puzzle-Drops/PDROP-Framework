@@ -17,7 +17,7 @@ pdrop-arrow/
 │   └── arrow.js                     ← GAME: server-side arrow logic (movement, arrows, collisions, win)
 │
 ├── public/
-│   ├── index.html                   ← HTML shell + all CSS (framework + game styles)
+│   ├── index.html                   ← SHARED: framework structure + game CSS/markup
 │   ├── framework.js                 ← FRAMEWORK: scaling, camera, chat UI, pings, scoreboard, tooltips, lobby UI
 │   └── game.js                      ← GAME: client-side arrow code (GameDef, rendering, input, HUD)
 │
@@ -33,11 +33,18 @@ pdrop-arrow/
 | `server.js` | Entry point — requires framework + game, starts Express + WS | One line: which game file to require |
 | `server/framework.js` | Lobby, slots, chat, ping routing, tick loop shell | **Never** |
 | `game/arrow.js` | Arrow-specific server logic | **Delete and replace** |
-| `public/index.html` | HTML shell, canvas, `#ui` div, all CSS, `<script>` tags | Rarely — only if game adds custom CSS |
+| `public/index.html` | Framework structure + game CSS/markup (separated by comments) | **Partially** — keep framework sections, replace game sections |
 | `public/framework.js` | Scaling, camera, chat UI, pings, scoreboard, tooltips, lobby screens | **Never** |
-| `public/game.js` | Arrow-specific client code (GameDef, rendering, input) | **Delete and replace** |
+| `public/game.js` | Arrow-specific client code (GameDef, rendering, input, HUD) | **Delete and replace** |
 
-**To start a new game:** Delete `game/arrow.js` and `public/game.js`. Create new versions that implement the same interfaces. Change the require path in `server.js`. Done. Framework is untouched.
+**To start a new game:**
+
+1. Replace `game/arrow.js` with new server game logic
+2. Replace `public/game.js` with new `window.GameDef` (only define hooks you need — all are optional)
+3. In `index.html`, clear the game CSS/markup sections (marked by comments), add your own
+4. Change the require path in `server.js`
+
+Framework files never touched: `server/framework.js`, `public/framework.js`, `package.json`.
 
 ## Read These First
 
@@ -69,62 +76,53 @@ Before writing any code, read both design documents in `/docs/`:
 
 ### Server Side
 
-`server/framework.js` exports a function that sets up the lobby/networking infrastructure and calls into the game module. The game module (`game/arrow.js`) exports an object with these hooks:
+`server/framework.js` exports a function that sets up the lobby/networking infrastructure and calls into the game module. The game module (`game/arrow.js`) exports an object. Only `id`, `name`, and `maxPlayers` are required. All hooks are optional — the framework checks before calling.
 
 ```js
 module.exports = {
+    // Required
     id: 'pdrop-arrow',
     name: 'PDROP Arrow',
     maxPlayers: 12,
-    slotsPerTeam: 3,
-    supportedModes: ['teams', 'ffa'],
+
+    // Optional properties
+    supportedModes: ['teams', 'ffa'],    // default: ['ffa']
     defaultMode: 'ffa',
     defaultTeamCount: 2,
 
-    // Called when host starts the game
+    // Optional hooks (framework guards all of these)
     init(players, settings, mode, teamCount) { },
-
-    // Called every server tick (50ms)
     tick(dt) { },
-
-    // Called when a client sends a game-specific message
     onInput(playerId, message) { },
-
-    // Called to get current state for broadcast
     getState() { },
-
-    // Called to check if round is over
     checkRoundOver() { },
 };
 ```
 
 ### Client Side
 
-`public/framework.js` sets up all UI systems and calls into the GameDef object. `public/game.js` defines `window.GameDef` with these hooks:
+`public/framework.js` sets up all UI systems and calls into the GameDef object. `public/game.js` defines `window.GameDef`. Only `id`, `name`, and `maxPlayers` are required. All hooks are optional — only implement what the game needs.
 
 ```js
 window.GameDef = {
+    // Required
     id: 'pdrop-arrow',
     name: 'PDROP Arrow',
-    worldWidth: 3200,
-    worldHeight: 2400,
+    maxPlayers: 12,
 
+    // Optional properties
+    worldWidth: 3200,       // default: 1920 (no camera needed)
+    worldHeight: 2400,      // default: 1080 (no camera needed)
+
+    // Optional hooks (only implement what you need)
     getCameraLockTarget(localPlayer) { },
     getCameraSnapTarget(localPlayer) { },
     getScoreboardColumns() { },
     getPlayerStats(playerId) { },
     getEntityTooltip(entity) { },
-
-    // Called once when game state starts arriving
     onGameStart(initialState) { },
-
-    // Called every frame
     render(ctx, camera, gameState) { },
-
-    // Called on mouse/keyboard input (framework filters out chat/ping/scoreboard inputs first)
     onInput(inputType, data) { },
-
-    // Called to build the post-game results screen
     getResults(finalState) { },
 };
 ```
