@@ -1377,18 +1377,22 @@ POST GAME
 
 ### 12.1 Game Loop
 
+The render loop runs at the browser's refresh rate (typically 60fps). To smooth out the 20 tick/sec server updates, the framework interpolates entity positions between the previous and current server states.
+
 ```js
 function gameLoop(timestamp) {
     const dt = timestamp - lastTimestamp;
     lastTimestamp = timestamp;
 
-    update(dt);         // game logic, network state
-    updateCamera();     // camera follow / edge scroll
-    render(ctx);        // draw world offset by camera
-    renderPings(ctx);   // draw active pings over world
+    const renderState = getInterpolatedState(performance.now());
+    updateCamera(renderState);  // camera follow / edge scroll (uses lerped positions)
+    render(ctx, renderState);   // draw world offset by camera
+    renderPings(ctx);           // draw active pings over world
     requestAnimationFrame(gameLoop);
 }
 ```
+
+The interpolation lerps `x`/`y` for players and arrows. All other properties (alive, angle, color, etc.) use the latest server state. Input logic always uses the raw authoritative state, not the interpolated one.
 
 ### 12.2 Game-Defined Hooks
 

@@ -58,6 +58,10 @@
     // ── Game State ────────────────────────────────────────────────
     let gamePhase = 'menu'; // 'menu' | 'lobby' | 'countdown' | 'playing' | 'postgame'
     let gameState = null;
+    let prevGameState = null;
+    let stateTimestamp = 0;      // performance.now() when current state arrived
+    let prevStateTimestamp = 0;  // performance.now() when previous state arrived
+    const TICK_MS = 50;          // server sends at 20 ticks/sec = 50ms
     let countdownValue = 0;
     let countdownPlayers = null;
 
@@ -929,7 +933,10 @@
                 break;
 
             case 'game_state':
+                prevGameState = gameState;
+                prevStateTimestamp = stateTimestamp;
                 gameState = msg;
+                stateTimestamp = performance.now();
                 break;
 
             case 'elimination':
@@ -1401,6 +1408,55 @@
         ctx.globalAlpha = 1;
     }
 
+    // ── Interpolation ────────────────────────────────────────────
+    function getInterpolatedState(now) {
+        if (!gameState) return null;
+        if (!prevGameState || !prevStateTimestamp) return gameState;
+
+        // t = how far we are between prev and current state (0..1, can exceed 1)
+        const elapsed = now - stateTimestamp;
+        const interval = stateTimestamp - prevStateTimestamp;
+        if (interval <= 0) return gameState;
+        const t = Math.min(1 + elapsed / interval, 2); // clamp to avoid wild extrapolation
+
+        // Build interpolated state
+        const lerped = { ...gameState };
+
+        // Lerp players
+        if (gameState.players && prevGameState.players) {
+            const prevMap = {};
+            for (const p of prevGameState.players) prevMap[p.id] = p;
+
+            lerped.players = gameState.players.map(p => {
+                const prev = prevMap[p.id];
+                if (!prev) return p;
+                return {
+                    ...p,
+                    x: prev.x + (p.x - prev.x) * t,
+                    y: prev.y + (p.y - prev.y) * t,
+                };
+            });
+        }
+
+        // Lerp arrows
+        if (gameState.arrows && prevGameState.arrows) {
+            const prevMap = {};
+            for (const a of prevGameState.arrows) prevMap[a.id] = a;
+
+            lerped.arrows = gameState.arrows.map(a => {
+                const prev = prevMap[a.id];
+                if (!prev) return a;
+                return {
+                    ...a,
+                    x: prev.x + (a.x - prev.x) * t,
+                    y: prev.y + (a.y - prev.y) * t,
+                };
+            });
+        }
+
+        return lerped;
+    }
+
     // ── Main Render Loop ──────────────────────────────────────────
     let lastTimestamp = 0;
 
@@ -1409,16 +1465,18 @@
         lastTimestamp = timestamp;
 
         if (gamePhase === 'playing' || gamePhase === 'countdown') {
-            // Update camera lock/snap targets from game state
-            if (window.GameDef && gameState) {
-                const lp = getLocalPlayerFromState();
+            // Compute interpolated state for smooth rendering
+            const renderState = getInterpolatedState(performance.now());
+
+            // Update camera lock/snap targets from interpolated state
+            if (window.GameDef && renderState) {
+                const lp = renderState.players ? renderState.players.find(p => p.id === localPlayerId) : null;
                 if (lp) {
                     if (camera.locked && window.GameDef.getCameraLockTarget) {
                         const target = window.GameDef.getCameraLockTarget(lp);
                         if (target) {
                             camera.lockTarget = target;
                         } else {
-                            // Target lost (e.g. player died) — release to free camera
                             camera.locked = false;
                             camera.lockTarget = null;
                         }
@@ -1440,9 +1498,9 @@
             // Apply zoom transform
             ctx.setTransform(camera.zoom, 0, 0, camera.zoom, 0, 0);
 
-            // Game render (in zoomed space)
+            // Game render (in zoomed space) — pass interpolated state
             if (window.GameDef && window.GameDef.render) {
-                window.GameDef.render(ctx, camera, gameState);
+                window.GameDef.render(ctx, camera, renderState);
             }
 
             // Pings (in zoomed space)

@@ -213,7 +213,7 @@ const player = {
     targetX: 400,           // move-to target
     targetY: 300,
     angle: 0,               // facing direction (radians)
-    speed: 3.5,             // pixels per tick
+    speed: 7,               // pixels per tick
     alive: true,
     radius: 18,             // collision radius
 };
@@ -281,7 +281,7 @@ const arrow = {
     x: 500,                 // current position
     y: 300,
     angle: 1.2,             // direction (radians)
-    speed: 8,               // pixels per tick
+    speed: 12,              // pixels per tick
     radius: 5,              // collision radius
     life: 120,              // ticks remaining (despawns at 0)
     maxLife: 120,            // for fade calculation
@@ -654,7 +654,7 @@ The `state` message is the core of the network model. Sent 20 times per second, 
 
 ### 12.5 Client Rendering
 
-The client receives `state` messages and renders them directly. No interpolation in the first version — just snap to the server positions. This is acceptable at 20 ticks/sec for a simple game. If it looks jittery, linear interpolation between the last two states can be added later.
+The client stores the previous and current game state along with timestamps. On each render frame, it linearly interpolates player and arrow positions between the two states based on elapsed time. This smooths out the 20 tick/sec updates to 60fps rendering. The interpolated state is used for rendering and camera only — input logic uses the raw authoritative state.
 
 ### 12.6 Input Validation (Server)
 
