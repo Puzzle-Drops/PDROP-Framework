@@ -71,6 +71,9 @@ Before writing any code, read both design documents in `/docs/`:
 - **Port from environment.** Server must use `process.env.PORT || 3000`. Railway assigns the port.
 - **WebSocket on same server.** WS upgrades happen on the Express HTTP server. Client connects to `location.host` — no hardcoded URLs.
 - **Scoreboard consumes clicks.** When Escape scoreboard is open, a full-screen backdrop with `pointer-events: auto` blocks all canvas interaction. See §8 of framework doc.
+- **Camera zoom.** Mouse wheel zooms 0.5×–2×. All screen-to-world conversions account for `camera.zoom`. Canvas uses `setTransform()` for zoom; HUD renders in screen space after transform reset.
+- **Session persistence.** Player name saved in `localStorage`. Session (player ID + lobby ID) saved in `sessionStorage`. On reconnect, client sends `rejoin` to restore into the same slot/game.
+- **No text selection.** `user-select: none` on all elements except input fields.
 
 ## Interface Between Framework and Game
 

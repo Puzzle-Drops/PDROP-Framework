@@ -255,11 +255,13 @@ Combined with framework controls:
 | Input | Action |
 |-------|--------|
 | `Enter` | Open chat (team) |
-| `Shift + Enter` | Send to all |
+| `Shift + Enter` | Open chat (all) |
+| `Tab` / `Shift` (in chat) | Cycle channel (Team ↔ All) |
 | `Escape` | Scoreboard |
 | `Alt` + Click/Drag | Ping system |
 | `Y` | Toggle camera lock to player character |
-| `Space` (hold) | Jump camera to player character |
+| `Space` | Snap camera to player character |
+| Mouse wheel | Zoom in/out |
 
 ### 6.1 Input While Dead
 

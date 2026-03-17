@@ -227,7 +227,7 @@ ctx.font = '600 22px Rajdhani';
 
 ## 5. Camera System
 
-Top-down RTS-style camera, similar to League of Legends. The camera defines a viewport into a larger world. The canvas always renders a 1920×1080 window into the world — the camera controls which 1920×1080 slice you see.
+Top-down RTS-style camera, similar to League of Legends. The camera defines a viewport into a larger world. The canvas renders a zoomed window into the world — the camera controls which slice you see.
 
 ### 5.1 Camera State
 
@@ -241,17 +241,23 @@ const camera = {
     spaceHeld: false,      // true while Space is held down
     edgeScrollSpeed: 12,   // pixels per frame when edge scrolling
     edgeScrollMargin: 40,  // pixel band at screen edge that triggers scrolling
+    zoom: 1,               // current zoom level (1 = default)
+    minZoom: 0.5,          // maximum zoom out
+    maxZoom: 2,            // maximum zoom in
 };
 ```
 
+The effective viewport size in world units is `1920 / zoom` × `1080 / zoom`. Screen-to-world conversion: `worldX = screenX / zoom + camera.x`.
+
 ### 5.2 Camera Inputs
 
-Two keys, two different behaviors:
+Three input types:
 
 | Key | Action | Behavior |
 |-----|--------|----------|
 | `Y` | Toggle camera lock | Toggles `camera.locked` on/off. Camera follows `lockTarget` continuously until toggled off. **Game-defined — some games disable this entirely.** |
-| `Space` (hold) | Jump to point of interest | While held, camera snaps to `snapTarget` and follows it. On release, camera returns to where it was. Does **not** change `camera.locked` state. |
+| `Space` | Snap to point of interest | Camera snaps to `snapTarget` and stays there on release. Does **not** change `camera.locked` state. |
+| Mouse wheel | Zoom in/out | Scroll up to zoom in, scroll down to zoom out. Zooms toward cursor position. Range: 0.5× to 2×. |
 
 ### 5.3 Y — Camera Lock Toggle
 
@@ -276,9 +282,9 @@ function onKeyDown_Y() {
 }
 ```
 
-### 5.4 Space — Jump to Point of Interest (Hold)
+### 5.4 Space — Snap to Point of Interest
 
-`Space` is a momentary jump. While held, the camera snaps to the game's defined point of interest (`snapTarget`) and follows it. When released, the camera returns to the previous position. It does **not** toggle `camera.locked`.
+`Space` snaps the camera to the game's defined point of interest (`snapTarget`). While held, the camera follows the target. On release, the camera **stays** at the new position. It does **not** change `camera.locked` state.
 
 Every game defines a snap target. It's often the same as the lock target, but doesn't have to be:
 
@@ -289,35 +295,20 @@ Every game defines a snap target. It's often the same as the lock target, but do
 | Tower Defense | *(disabled)* | Main tower / spawn |
 | Arena FFA | Player's character | Player's character |
 
-If the player is holding Space, the camera behaves identically to lock mode — centered on `snapTarget` every frame, edge scrolling disabled. The difference is it's not persistent; releasing Space restores the prior camera position.
-
 ```js
-let savedCameraX, savedCameraY;
-
 function onKeyDown_Space() {
     const target = GameDef.getCameraSnapTarget(localPlayer);
     if (!target) return;
-
     camera.spaceHeld = true;
     camera.snapTarget = target;
-    savedCameraX = camera.x;
-    savedCameraY = camera.y;
 }
 
 function onKeyUp_Space() {
     if (!camera.spaceHeld) return;
     camera.spaceHeld = false;
     camera.snapTarget = null;
-
-    // Restore previous position (unless Y-lock is active)
-    if (!camera.locked) {
-        camera.x = savedCameraX;
-        camera.y = savedCameraY;
-    }
 }
 ```
-
-**Interaction with Y-lock:** If the camera is already Y-locked, Space does nothing extra — you're already following the target. If the camera is free and the player holds Space, it behaves like a temporary lock. If they press Y while holding Space, the lock persists after Space is released.
 
 ### 5.5 Edge Scrolling
 
@@ -347,13 +338,13 @@ function worldToScreen(worldX, worldY) {
 }
 ```
 
-When interpreting mouse clicks on the canvas, add the camera offset:
+When interpreting mouse clicks on the canvas, add the camera offset (accounting for zoom):
 
 ```js
 function screenToWorld(screenX, screenY) {
     return {
-        x: screenX + camera.x,
-        y: screenY + camera.y
+        x: screenX / camera.zoom + camera.x,
+        y: screenY / camera.zoom + camera.y
     };
 }
 ```
@@ -362,22 +353,43 @@ function screenToWorld(screenX, screenY) {
 
 ```js
 function updateCamera() {
-    // Space-hold takes priority (temporary snap)
+    const vw = 1920 / camera.zoom;
+    const vh = 1080 / camera.zoom;
+
+    // Space snap takes priority
     if (camera.spaceHeld && camera.snapTarget) {
-        camera.x = camera.snapTarget.x - 960;
-        camera.y = camera.snapTarget.y - 540;
+        camera.x = camera.snapTarget.x - vw / 2;
+        camera.y = camera.snapTarget.y - vh / 2;
     }
     // Y-lock (persistent follow)
     else if (camera.locked && camera.lockTarget) {
-        camera.x = camera.lockTarget.x - 960;
-        camera.y = camera.lockTarget.y - 540;
+        camera.x = camera.lockTarget.x - vw / 2;
+        camera.y = camera.lockTarget.y - vh / 2;
     }
 
-    // Clamp to world bounds (game provides worldWidth / worldHeight)
-    camera.x = Math.max(0, Math.min(camera.x, worldWidth - 1920));
-    camera.y = Math.max(0, Math.min(camera.y, worldHeight - 1080));
+    // Clamp — don't let viewport edge pass the opposite world edge
+    camera.x = Math.max(-vw, Math.min(camera.x, worldWidth));
+    camera.y = Math.max(-vh, Math.min(camera.y, worldHeight));
 }
 ```
+
+### 5.7.1 Zoom
+
+Mouse wheel zooms in/out, centered on the cursor position:
+
+```js
+container.addEventListener('wheel', (e) => {
+    const oldZoom = camera.zoom;
+    camera.zoom = clamp(camera.zoom + (e.deltaY < 0 ? 0.1 : -0.1), 0.5, 2);
+    // Zoom toward mouse in world space
+    const worldMouseX = mouseCanvasX / oldZoom + camera.x;
+    const worldMouseY = mouseCanvasY / oldZoom + camera.y;
+    camera.x = worldMouseX - mouseCanvasX / camera.zoom;
+    camera.y = worldMouseY - mouseCanvasY / camera.zoom;
+});
+```
+
+The zoom is applied as a canvas transform before game rendering. HUD elements (ping wheel, countdown) render in screen space after the transform is reset.
 
 ### 5.8 Game-Defined Camera Hooks
 
@@ -414,11 +426,13 @@ A persistent chatbox anchored to the bottom-left of the 1920×1080 UI overlay. S
 
 | Action | Key | Behavior |
 |--------|-----|----------|
-| Open chat / Send to **Team** | `Enter` | Opens input focused. Pressing Enter again sends to team only. |
-| Send to **All** | `Shift + Enter` | While chat input is focused, sends to all players. |
-| Close chat without sending | `Escape` | Closes input, returns focus to game. |
+| Open chat (**Team**) | `Enter` | Opens chat input focused, set to Team channel. |
+| Open chat (**All**) | `Shift + Enter` | Opens chat input focused, set to All channel. |
+| Send message | `Enter` (while chat focused) | Sends message on the current channel and closes chat. |
+| Cycle channel | `Tab` or `Shift` (while chat focused) | Cycles between Team and All channel. |
+| Close chat without sending | `Escape` (while chat focused) | Closes input, returns focus to game. |
 
-If the chat input is not focused, `Enter` opens it. If it is focused, `Enter` sends (team), `Shift+Enter` sends (all), `Escape` closes.
+In **FFA** mode, there is no team channel — chat always sends to All regardless of channel selection.
 
 ### 6.2 Chat Message Types
 
@@ -1549,12 +1563,15 @@ That's a valid game definition. The framework will run with sensible defaults: F
 |-----|---------|--------|
 | `Escape` | Game | Open/close scoreboard (player list, mute controls) |
 | `Enter` | Game / Lobby | Open chat (team channel) |
-| `Shift + Enter` | Chat focused | Send to all channel |
-| `Escape` | Chat focused | Close chat |
+| `Shift + Enter` | Game / Lobby | Open chat (all channel) |
+| `Enter` | Chat focused | Send message and close chat |
+| `Tab` / `Shift` | Chat focused | Cycle chat channel (Team ↔ All) |
+| `Escape` | Chat focused | Close chat without sending |
 | `Alt` (hold) | Game | Show ping crosshair |
 | `Alt` + Click | Game | Normal ping |
 | `Alt` + Click + Drag | Game | Open ping wheel, release to fire |
 | Right-click player row | Scoreboard open | Per-player mute/hide menu |
 | `Y` | Game (if game supports lock) | Toggle camera lock on/off |
-| `Space` (hold) | Game | Jump to point of interest (hold to follow, release to return) |
+| `Space` | Game | Snap camera to point of interest (stays on release) |
+| Mouse wheel | Game | Zoom in/out (0.5× to 2×) |
 | Mouse to screen edge | Game (camera free) | Edge scroll camera |
