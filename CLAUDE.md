@@ -130,22 +130,22 @@ window.GameDef = {
 };
 ```
 
-## Build Order
+## Build Order (All Complete)
 
-Follow this sequence. Each step should be working and testable before moving to the next.
+All 12 steps are implemented and working.
 
-1. **Server entry + framework skeleton** — `server.js` wires Express + WS. `server/framework.js` accepts connections, manages lobbies. `game/arrow.js` is a stub.
-2. **Client shell + scaling** — `index.html` with 1920×1080 container, canvas, `#ui` overlay, CSS zoom. `framework.js` handles resize. `game.js` is a stub.
-3. **Main menu + lobby** — Create/join server, slot system, team panels, ready toggle. All in `framework.js` (both sides).
-4. **Chat** — Enter for team, Shift+Enter for all. Framework handles routing. Working in lobby.
-5. **Game start + countdown** — Host starts, 3-2-1 countdown, spawn players. Framework manages state transition, game provides spawn logic.
-6. **Camera** — Y-lock to character, Space-jump, edge scrolling. All in client `framework.js`, game provides lock/snap targets.
-7. **Movement** — Right-click to move. `game.js` sends input, `arrow.js` processes it, state broadcast renders it.
-8. **Arrows** — Q to shoot toward cursor. Server collision detection, elimination broadcast.
-9. **Win condition + post-game** — Round over detection in `arrow.js`, results screen in `framework.js` using `getResults()`.
-10. **Pings** — Alt+Click wheel. Framework handles everything, game doesn't need to do anything.
-11. **Scoreboard + mute** — Escape overlay with backdrop, right-click menu. Framework handles it, game provides `getScoreboardColumns()` and `getPlayerStats()`.
-12. **Tooltips + HUD** — Framework tooltip system, game provides `getEntityTooltip()`. Kill feed and alive count in `game.js`.
+1. **Server entry + framework skeleton** — `server.js` wires Express + WS. `server/framework.js` manages lobbies, slots, chat, pings, tick loop, session rejoin.
+2. **Client shell + scaling** — `index.html` with 1920×1080 scaling, CSS zoom overlay. `framework.js` handles resize.
+3. **Main menu + lobby** — Create/join server, slot system, team panels, ready toggle, host transfer, mode switching.
+4. **Chat** — Enter opens team chat, Shift+Enter opens all chat. Tab/Shift cycles channel. Framework routes team/all.
+5. **Game start + countdown** — 3-2-1 countdown with arena visible. Players spawn at FFA ellipse or team corners.
+6. **Camera** — Y-lock toggle, Space-snap (stays on release), edge scrolling, mouse wheel zoom (0.5×–2×).
+7. **Movement** — Right-click to move. Server-authoritative with wall/obstacle collision.
+8. **Arrows** — Q to shoot toward cursor. 30-tick cooldown. Server collision detection, elimination broadcast, kill feed, alive count HUD.
+9. **Win condition + post-game** — Last player/team standing. Kill leaderboard on results screen. Rematch returns to lobby.
+10. **Pings** — Alt+Click wheel with 5 types. Team-only visibility. Audio feedback. Mute filtering.
+11. **Scoreboard + mute** — Escape overlay. Game-defined stat columns. Per-player right-click mute menu. Global mute toggles. Persisted in localStorage.
+12. **Tooltips + HUD** — DOM tooltips via `data-tooltip`. Canvas entity tooltips on players (name + status) and obstacles. Kill feed + alive count.
 
 ## Testing Locally
 

@@ -1042,11 +1042,11 @@ This means tooltips work automatically on any element — lobby slots, scoreboar
 
 ### 9.5 Canvas Entity Tooltips
 
-For game-world entities (players, items, NPCs), the game's mousemove handler checks if the mouse is over an entity in world space and calls `showTooltip()` with game-defined content:
+For game-world entities (players, items, NPCs), the framework's container mousemove handler checks if the mouse is over an entity in world space (accounting for zoom) and calls `showTooltip()` with game-defined content. Tooltips are suppressed during chat focus, ping mode (Alt held), and when scoreboard is open.
 
 ```js
-const worldPos = screenToWorld(canvasMouseX, canvasMouseY);
-const entity = getEntityAt(worldPos.x, worldPos.y);
+const worldPos = screenToWorld(canvasMouseX, canvasMouseY); // accounts for zoom
+const entity = findEntityAt(worldPos.x, worldPos.y);
 if (entity) {
     showTooltip(GameDef.getEntityTooltip(entity), uiMouseX, uiMouseY);
 } else {

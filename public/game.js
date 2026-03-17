@@ -271,7 +271,15 @@
         },
 
         getEntityTooltip(entity) {
-            return null; // Will implement later
+            if (entity.type === 'player') {
+                const status = entity.alive ? 'Alive' : 'Eliminated';
+                return `<div class="tip-title" style="color: ${entity.color}">${esc(entity.name)}</div>`
+                     + `<div class="tip-desc">${status}</div>`;
+            }
+            if (entity.type === 'obstacle') {
+                return `<div class="tip-desc">Wall &mdash; blocks arrows</div>`;
+            }
+            return null;
         },
 
         getResults(finalState) {

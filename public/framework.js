@@ -332,7 +332,7 @@
         const uiY = e.clientY / zoomScale;
         if (target) {
             showTooltip(target.getAttribute('data-tooltip'), uiX, uiY);
-        } else {
+        } else if (!isOverCanvasEntity) {
             hideTooltip();
         }
     });
@@ -351,6 +351,7 @@
     function closeScoreboard() {
         scoreboardOpen = false;
         if (scoreboardBackdrop) scoreboardBackdrop.classList.add('hidden');
+        closeScoreboardContextMenu();
     }
 
     function renderScoreboard() {
@@ -392,6 +393,17 @@
                 muteState.global[e.target.dataset.muteGlobal] = e.target.checked;
             });
         });
+
+        // Per-player right-click context menu
+        scoreboardPanel.querySelectorAll('.sb-row').forEach(row => {
+            row.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const playerId = row.dataset.playerId;
+                if (playerId === localPlayerId) return; // can't mute yourself
+                showScoreboardContextMenu(e, playerId);
+            });
+        });
     }
 
     function renderScoreboardRow(player, columns) {
@@ -406,6 +418,55 @@
         }
         html += '</div>';
         return html;
+    }
+
+    // ── Scoreboard Context Menu ──────────────────────────────────
+    let sbContextMenu = null;
+
+    function showScoreboardContextMenu(e, playerId) {
+        closeScoreboardContextMenu();
+        const zoomScale = parseFloat(ui.style.zoom) || 1;
+        const uiX = e.clientX / zoomScale;
+        const uiY = e.clientY / zoomScale;
+
+        if (!muteState.players[playerId]) {
+            muteState.players[playerId] = { mutePings: false, muteMessages: false, hideMessages: false };
+        }
+        const ps = muteState.players[playerId];
+
+        const menu = document.createElement('div');
+        menu.className = 'context-menu';
+        menu.style.left = uiX + 'px';
+        menu.style.top = uiY + 'px';
+        menu.innerHTML = `
+            <label class="ctx-item"><input type="checkbox" ${ps.mutePings ? 'checked' : ''}> Mute Pings</label>
+            <label class="ctx-item"><input type="checkbox" ${ps.muteMessages ? 'checked' : ''}> Mute Messages</label>
+            <label class="ctx-item"><input type="checkbox" ${ps.hideMessages ? 'checked' : ''}> Hide Messages</label>
+        `;
+        ui.appendChild(menu);
+        sbContextMenu = menu;
+
+        const checkboxes = menu.querySelectorAll('input[type="checkbox"]');
+        checkboxes[0].addEventListener('change', (ev) => { ps.mutePings = ev.target.checked; saveMuteState(); });
+        checkboxes[1].addEventListener('change', (ev) => { ps.muteMessages = ev.target.checked; saveMuteState(); });
+        checkboxes[2].addEventListener('change', (ev) => { ps.hideMessages = ev.target.checked; saveMuteState(); });
+
+        // Close on click outside
+        setTimeout(() => {
+            document.addEventListener('mousedown', function handler(ev) {
+                if (!menu.contains(ev.target)) {
+                    closeScoreboardContextMenu();
+                    document.removeEventListener('mousedown', handler);
+                }
+            });
+        }, 0);
+    }
+
+    function closeScoreboardContextMenu() {
+        if (sbContextMenu) {
+            sbContextMenu.remove();
+            sbContextMenu = null;
+        }
     }
 
     // ── Ping System ───────────────────────────────────────────────
@@ -725,13 +786,29 @@
 
         let html = '<div class="pg-title">';
         if (result.winner) {
-            html += `${escapeHtml(result.winner.name || 'Unknown')} wins!`;
+            html += `<span style="color:${result.winner.color || '#fff'}">${escapeHtml(result.winner.name || 'Unknown')}</span> wins!`;
         } else if (result.winnerTeam !== undefined && result.winnerTeam !== null) {
-            html += `${COLOR_NAMES[result.winnerTeam]} Team wins!`;
+            html += `<span style="color:${COLORS[result.winnerTeam]}">${COLOR_NAMES[result.winnerTeam]} Team</span> wins!`;
         } else {
             html += 'Game Over';
         }
         html += '</div>';
+
+        // Kill leaderboard
+        if (result.stats && result.stats.length > 0) {
+            const sorted = result.stats.slice().sort((a, b) => (b.kills || 0) - (a.kills || 0));
+            html += '<div class="pg-leaderboard">';
+            for (const p of sorted) {
+                const status = p.alive ? '' : ' <span class="pg-dead">eliminated</span>';
+                html += `<div class="pg-player-row">`;
+                html += `<span class="pg-player-color" style="background:${p.color}"></span>`;
+                html += `<span class="pg-player-name" style="color:${p.color}">${escapeHtml(p.name)}</span>`;
+                html += `<span class="pg-player-kills">${p.kills || 0} kill${(p.kills || 0) !== 1 ? 's' : ''}</span>`;
+                html += status;
+                html += `</div>`;
+            }
+            html += '</div>';
+        }
 
         html += '<div class="pg-buttons">';
         html += '<button class="pg-btn" id="btn-rematch">REMATCH</button>';
@@ -791,6 +868,12 @@
 
             case 'lobby_state':
                 currentLobby = msg.lobby;
+                // If server returned to lobby (e.g. rematch), switch client back
+                if (currentLobby.state === 'lobby' && gamePhase !== 'lobby') {
+                    gamePhase = 'lobby';
+                    showScreen('lobby-screen');
+                    camera.zoom = 1;
+                }
                 if (gamePhase === 'lobby') renderLobby();
                 break;
 
@@ -984,11 +1067,60 @@
 
     // ── Mouse Input ───────────────────────────────────────────────
     // Track mouse on the container so it works even over UI overlays
+    let isOverCanvasEntity = false;
+
     container.addEventListener('mousemove', (e) => {
         const rect = canvas.getBoundingClientRect();
         mouseCanvasX = (e.clientX - rect.left) * (VIRTUAL_W / rect.width);
         mouseCanvasY = (e.clientY - rect.top) * (VIRTUAL_H / rect.height);
+
+        // Canvas entity tooltips
+        isOverCanvasEntity = false;
+        if ((gamePhase === 'playing' || gamePhase === 'countdown') && !chatFocused && !altHeld && !scoreboardOpen) {
+            if (window.GameDef && window.GameDef.getEntityTooltip && gameState) {
+                const worldX = mouseCanvasX / camera.zoom + camera.x;
+                const worldY = mouseCanvasY / camera.zoom + camera.y;
+                const entity = findEntityAt(worldX, worldY);
+                if (entity) {
+                    const html = window.GameDef.getEntityTooltip(entity);
+                    if (html) {
+                        const zoomScale = parseFloat(ui.style.zoom) || 1;
+                        showTooltip(html, e.clientX / zoomScale, e.clientY / zoomScale);
+                        isOverCanvasEntity = true;
+                    }
+                }
+            }
+        }
+        if (!isOverCanvasEntity && !e.target.closest('[data-tooltip]')) {
+            hideTooltip();
+        }
     });
+
+    function findEntityAt(worldX, worldY) {
+        if (!gameState) return null;
+        // Check players
+        for (const p of gameState.players) {
+            if (!p.alive) continue;
+            const dist = Math.hypot(worldX - p.x, worldY - p.y);
+            if (dist < (p.radius || 18) + 8) {
+                return { type: 'player', ...p };
+            }
+        }
+        // Check obstacles
+        const obstacles = [
+            { x: 800, y: 600, w: 120, h: 200 },
+            { x: 2000, y: 400, w: 200, h: 120 },
+            { x: 1400, y: 1200, w: 160, h: 160 },
+            { x: 600, y: 1600, w: 200, h: 100 },
+            { x: 2400, y: 1800, w: 120, h: 220 },
+        ];
+        for (const o of obstacles) {
+            if (worldX >= o.x && worldX <= o.x + o.w && worldY >= o.y && worldY <= o.y + o.h) {
+                return { type: 'obstacle', ...o };
+            }
+        }
+        return null;
+    }
 
     // Suppress browser context menu on the entire game container
     document.getElementById('game-container').addEventListener('contextmenu', (e) => {
